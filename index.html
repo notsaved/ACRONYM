@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ACRONYM (Acronyms Creating Recursion Of Narratives Yielding Meaning)</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: #fff;
+    color: #000;
+    font-family: Arial, Helvetica, sans-serif;
+    font-weight: 700;
+    overflow: hidden;
+  }
+
+  /* Fixed, non-scrolling viewport; the poem drifts inside it. */
+  .stage {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+  }
+
+  /* Full-width responsive poem column. */
+  .flow {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0 4vw;
+    will-change: transform;
+  }
+
+  .verse {
+    white-space: pre-wrap;
+    text-align: left;
+    font-size: clamp(26px, 4.5vw, 46px);
+    line-height: 1.26;
+    margin: 0 0 1em;
+  }
+
+  /* Instant hover tooltip showing the acronym's full CORDIS project title. */
+  span[data-title] {
+    position: relative;
+    cursor: default;
+  }
+
+  span[data-title]:hover::after {
+    content: attr(data-title);
+    position: absolute;
+    bottom: 1.2em;
+    left: 0;
+    max-width: min(30em, 92vw);
+    white-space: normal;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.3;
+    background: #000;
+    color: #fff;
+    padding: 2px 8px;
+    z-index: 5;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <div class="flow" id="flow"></div>
+</div>
+
+<script>
+'use strict';
+
+/* ---------- helpers ---------- */
+
+const pick = (r, a) => a[Math.floor(r() * a.length)];
+
+const escAttr = s =>
+  s.replace(/&/g, "&amp;")
+   .replace(/"/g, "&quot;")
+   .replace(/</g, "&lt;")
+   .replace(/>/g, "&gt;");
+
+/* ---------- verse engine ---------- */
+
+function makeVerseEngine(A) {
+  // Rhyme support: acronyms bucketed by first and last letter.
+  const BY_LAST = {};
+  const BY_FIRST = {};
+  for (const a of A) {
+    (BY_LAST[a[a.length - 1]] || (BY_LAST[a[a.length - 1]] = [])).push(a);
+    (BY_FIRST[a[0]] || (BY_FIRST[a[0]] = [])).push(a);
+  }
+  const acrEnding = (r, letter) => pick(r, BY_LAST[letter] || A);
+
+  // One line of 1..n acronyms, optionally forced to end on a letter.
+  function lineOfLen(r, n, mustEndLetter) {
+    const parts = [];
+    const count = Math.max(1, n);
+    for (let i = 0; i < count; i++) parts.push(pick(r, A));
+    if (mustEndLetter) parts[parts.length - 1] = acrEnding(r, mustEndLetter);
+    return parts.join(" ");
+  }
+
+  // Morph continuum from classical to free verse.
+  const FAM_ORDER = ["sonnet", "quatrain", "couplets", "tercets", "stanza3",
+                     "acrostic", "limerick", "refrain", "blazon", "freeverse"];
+  const RHYMED = new Set(["sonnet", "quatrain", "couplets", "tercets", "limerick"]);
+  let m = Math.random();
+  let dir = Math.random() < 0.5 ? 1 : -1;
+
+  // Returns an array of stanza strings (stanzas contain real newlines).
+  function stanza() {
+    const rr = Math.random;
+    m += dir * (0.012 + rr() * 0.02);
+    if (m > 1) { m = 1; dir = -1; }
+    if (m < 0) { m = 0; dir = 1; }
+    const fam = FAM_ORDER[Math.max(0, Math.min(FAM_ORDER.length - 1,
+      Math.round(m * (FAM_ORDER.length - 1) + (rr() * 3 - 1.5))))];
+    const rhymed = RHYMED.has(fam);
+
+    const maxTok = Math.max(2, Math.min(4, 2 + Math.round((1 - m) * 2 + rr() * 0.7)));
+    const nTok = () => 1 + Math.floor(rr() * maxTok);
+    const rhymeMap = {};
+    function rhymeLetter(sch, idx) {
+      const ch = sch[idx % sch.length];
+      if (rhymeMap[ch] === undefined) {
+        rhymeMap[ch] = "ABCDEFGHIZKLMNOPQRSTUVWXYZ"[Math.floor(rr() * 26)];
+      }
+      return rhymeMap[ch];
+    }
+    const end = (sch, i) => rhymed ? rhymeLetter(sch, i) : null;
+
+    const st = [];
+
+    if (fam === "sonnet") {
+      const sch = "ABABCDCDEFEFGG";
+      const q = [];
+      for (let i = 0; i < 14; i++) q.push(lineOfLen(rr, nTok(), end(sch, i)));
+      st.push(q.slice(0, 4).join("\n"));
+      st.push(q.slice(4, 8).join("\n"));
+      st.push(q.slice(8, 11).join("\n"));
+      st.push(q.slice(11).join("\n"));
+    } else if (fam === "quatrain") {
+      const scheme = ["ABAB", "AABB", "ABBA", "ABCB", "AABA"][Math.floor(rr() * 5)];
+      const n = 1 + Math.floor(rr() * 2);
+      for (let s = 0; s < n; s++) {
+        const q = [];
+        for (let i = 0; i < 4; i++) q.push(lineOfLen(rr, nTok(), end(scheme, i)));
+        st.push(q.join("\n"));
+      }
+    } else if (fam === "couplets") {
+      const n = 2 + Math.floor(rr() * 2);
+      for (let i = 0; i < n; i++) {
+        const L = end("AA", 0);
+        st.push(lineOfLen(rr, nTok(), L) + "\n" + lineOfLen(rr, nTok(), L));
+      }
+    } else if (fam === "tercets") {
+      const scheme = ["ABAB", "AABB", "ABBA", "ABCB", "AABA"][Math.floor(rr() * 5)];
+      const n = 1 + Math.floor(rr() * 2);
+      for (let s = 0; s < n; s++) {
+        const q = [];
+        for (let i = 0; i < 3; i++) {
+          q.push(lineOfLen(rr, nTok(), end(scheme.slice(0, 3), i)));
+        }
+        st.push(q.join("\n"));
+      }
+    } else if (fam === "stanza3") {
+      const n = 2 + Math.floor(rr() * 3);
+      for (let s = 0; s < n; s++) {
+        st.push([
+          lineOfLen(rr, Math.min(2, nTok()), null),
+          lineOfLen(rr, Math.min(3, nTok() + 1), null),
+          lineOfLen(rr, Math.min(2, nTok()), null)
+        ].join("\n"));
+      }
+    } else if (fam === "acrostic") {
+      const words = ["EUROPA", "HORIZON", "BRUSSELS", "FRAMEWORK", "GRANT",
+                     "RESEARCH", "DELFT", "OSLO", "INNOVATE", "CORDIS", "MISTRAL"];
+      const w = pick(rr, words);
+      const body = [];
+      for (const ch of w) {
+        body.push(pick(rr, BY_FIRST[ch] || A) + " " +
+                  lineOfLen(rr, nTok() - 1, null));
+      }
+      st.push(body.join("\n"));
+    } else if (fam === "limerick") {
+      const A1 = end("A", 0);
+      const B1 = end("B", 0);
+      st.push([
+        lineOfLen(rr, 3, A1),
+        lineOfLen(rr, 3, A1),
+        lineOfLen(rr, 2, B1),
+        lineOfLen(rr, 2, B1),
+        lineOfLen(rr, 3, A1)
+      ].join("\n"));
+    } else if (fam === "refrain") {
+      const refrain = lineOfLen(rr, 1);
+      const n = 2 + Math.floor(rr() * 2);
+      for (let s = 0; s < n; s++) {
+        const body = [];
+        for (let i = 0; i < 2 + Math.floor(rr() * 2); i++) {
+          body.push(lineOfLen(rr, nTok(), null));
+        }
+        body.push(refrain);
+        st.push(body.join("\n"));
+      }
+    } else if (fam === "blazon") {
+      const n = 5 + Math.floor(rr() * 5);
+      const body = [];
+      for (let i = 0; i < n; i++) body.push(lineOfLen(rr, nTok(), null));
+      st.push(body.join("\n"));
+    } else {  // freeverse
+      const nL = 4 + Math.floor(rr() * 10);
+      const lines = [];
+      for (let i = 0; i < nL; i++) {
+        lines.push(lineOfLen(rr, rr() < 0.2 ? 4 : 1 + Math.floor(rr() * maxTok), null));
+      }
+      let cur = [];
+      const blocks = [];
+      for (const l of lines) {
+        cur.push(l);
+        if (rr() < 0.55) { blocks.push(cur.join("\n")); cur = []; }
+      }
+      if (cur.length) blocks.push(cur.join("\n"));
+      blocks.forEach(b => {
+        const ls = b.split("\n");
+        for (let i = 0; i < ls.length; i += 4) {
+          st.push(ls.slice(i, i + 4).join("\n"));
+        }
+      });
+    }
+    return st;
+  }
+
+  return stanza;
+}
+
+/* ---------- loader ---------- */
+
+async function loadAll() {
+  const text = await (await fetch("acronyms.tsv")).text();
+  const A = [];
+  const T = {};
+  for (const line of text.split("\n")) {
+    if (!line) continue;
+    const i = line.indexOf("\t");
+    const acr = line.slice(0, i);
+    A.push(acr);
+    T[acr] = line.slice(i + 1);
+  }
+  return [A, T];
+}
+
+/* ---------- stage: fixed viewport, drifting poem, DOM pruning ---------- */
+
+function startStage(A, T) {
+  const stanza = makeVerseEngine(A);
+  const stage = document.getElementById("stage");
+  const flow = document.getElementById("flow");
+
+  // Wrap every acronym in a span carrying its full project title.
+  function markup(s) {
+    return s.split("\n").map(line =>
+      line.split(" ").map(tok =>
+        T[tok] === undefined ? escAttr(tok)
+          : '<span data-title="' + escAttr(T[tok]) + '">' + escAttr(tok) + "</span>"
+      ).join(" ")
+    ).join("\n");
+  }
+
+  function append() {
+    for (const s of stanza()) {
+      const d = document.createElement("div");
+      d.className = "verse";
+      d.innerHTML = markup(s);
+      flow.appendChild(d);
+    }
+  }
+
+  append();
+  append();
+  append();
+
+  let px = stage.offsetHeight;
+  let last = performance.now();
+  const SPEED = 13;  // px per second
+
+  function frame(t) {
+    const dt = Math.min(0.1, (t - last) / 1000);
+    last = t;
+    px += SPEED * dt;
+    flow.style.transform = "translateY(" + (-px) + "px)";
+
+    const stageH = stage.offsetHeight;
+    if (flow.scrollHeight < px + stageH * 2) append();
+
+    // Prune verses that scrolled out and compensate the offset.
+    while (flow.children.length > 1 &&
+           flow.children[0].offsetTop + flow.children[0].offsetHeight < px - 600) {
+      const delta = flow.children[1].offsetTop - flow.children[0].offsetTop;
+      flow.removeChild(flow.children[0]);
+      px -= delta;
+    }
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ---------- go ---------- */
+
+loadAll().then(([A, T]) => startStage(A, T));
+</script>
+
+</body>
+</html>
