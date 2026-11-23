@@ -330,6 +330,7 @@ function startStage(A, T) {
 
   let px = stageH;
   let last = performance.now();
+  let lastY = null;  // last integer translateY actually written
   const SPEED = 13;  // px per second
 
   function frame(t) {
@@ -348,7 +349,15 @@ function startStage(A, T) {
       flow.removeChild(flow.children[0]);
     }
 
-    flow.style.transform = "translateY(" + (-px) + "px)";
+    // Snap the translation to whole CSS pixels. With a fractional translateY,
+    // Firefox re-snaps glyph rasterization every frame, so text (and the hover
+    // tooltips inside the transformed layer) shimmer by a pixel while scrolling.
+    // Only write the style when the integer offset actually changes.
+    const y = -Math.round(px);
+    if (y !== lastY) {
+      flow.style.transform = "translateY(" + y + "px)";
+      lastY = y;
+    }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
