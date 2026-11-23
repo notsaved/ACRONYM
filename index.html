@@ -285,6 +285,20 @@ function startStage(A, T) {
     ).join("\n");
   }
 
+  // Bookkeeping kept in JS instead of per-frame DOM reads: Firefox rounds
+  // offsetTop/offsetHeight/scrollHeight to integers, which made the prune
+  // compensation drift, and reading them every frame forces a sync layout.
+  // getBoundingClientRect().height is fractional everywhere and unaffected
+  // by the translateY transform.
+  let stageH = stage.offsetHeight;
+  let marginBottom = 0;
+  let contentH = 0;  // tracked layout height of all verses in flow
+
+  function measure(d) {
+    d._h = d.getBoundingClientRect().height;
+    d._full = d._h + marginBottom;
+  }
+
   function append() {
     for (const s of stanza()) {
       const d = document.createElement("div");
@@ -292,13 +306,29 @@ function startStage(A, T) {
       d.innerHTML = markup(s);
       flow.appendChild(d);
     }
+    for (const d of flow.children) {
+      if (d._h === undefined) {
+        if (!marginBottom) marginBottom = parseFloat(getComputedStyle(d).marginBottom) || 0;
+        measure(d);
+        contentH += d._full;
+      }
+    }
   }
 
+  function remeasure() {
+    stageH = stage.offsetHeight;
+    marginBottom = flow.children.length
+      ? parseFloat(getComputedStyle(flow.children[0]).marginBottom) || 0 : 0;
+    contentH = 0;
+    for (const d of flow.children) { measure(d); contentH += d._full; }
+  }
+  window.addEventListener("resize", remeasure);
+
   append();
   append();
   append();
 
-  let px = stage.offsetHeight;
+  let px = stageH;
   let last = performance.now();
   const SPEED = 13;  // px per second
 
@@ -306,19 +336,19 @@ function startStage(A, T) {
     const dt = Math.min(0.1, (t - last) / 1000);
     last = t;
     px += SPEED * dt;
-    flow.style.transform = "translateY(" + (-px) + "px)";
 
-    const stageH = stage.offsetHeight;
-    if (flow.scrollHeight < px + stageH * 2) append();
+    if (contentH < px + stageH * 2) append();
 
-    // Prune verses that scrolled out and compensate the offset.
-    while (flow.children.length > 1 &&
-           flow.children[0].offsetTop + flow.children[0].offsetHeight < px - 600) {
-      const delta = flow.children[1].offsetTop - flow.children[0].offsetTop;
+    // Prune verses that scrolled out and compensate the offset BEFORE the
+    // transform is applied, so the compensation lands in the same frame and
+    // the scroll never jumps up and back down.
+    while (flow.children.length > 1 && flow.children[0]._h < px - 600) {
+      px -= flow.children[0]._full;
+      contentH -= flow.children[0]._full;
       flow.removeChild(flow.children[0]);
-      px -= delta;
     }
 
+    flow.style.transform = "translateY(" + (-px) + "px)";
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
