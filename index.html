@@ -80,13 +80,15 @@
     user-select: none;
   }
 
-  /* About popup: same style as the acronym title tooltips. */
+  /* About popup: same style as the acronym title tooltips, but wide enough
+     to fit the whole title (including parenthesis) on a single line. */
   .info-popup {
     display: none;
     position: absolute;
     right: 0;
     bottom: calc(100% + 8px);
-    max-width: min(30em, 92vw);
+    width: max-content;
+    max-width: 92vw;
     white-space: normal;
     font-size: 14px;
     font-weight: 400;
