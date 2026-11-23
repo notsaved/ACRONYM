@@ -80,8 +80,8 @@
     user-select: none;
   }
 
-  /* About popup: same style as the acronym title tooltips, but wide enough
-     to fit the whole title (including parenthesis) on a single line. */
+  /* About popup: same style as the acronym title tooltips. Its width is set
+     by the (nowrap) title alone; the body text wraps within that width. */
   .info-popup {
     display: none;
     position: absolute;
@@ -101,10 +101,17 @@
   }
 
   .info:hover .info-popup { display: block; }
-  .info-popup .t { font-weight: 700; }
+  .info-popup .t { font-weight: 700; white-space: nowrap; }
+  /* Contributes 0 to the popup's intrinsic width, then fills it exactly,
+     so author/description wrap at the title's width. */
+  .info-popup .rest { width: 0; min-width: 100%; }
   .info-popup .a { font-style: italic; }
   .info-popup div { margin: 0 0 0.5em; }
   .info-popup div:last-child { margin-bottom: 0; }
+  @media (max-width: 600px) {
+    .info-popup { width: 92vw; }
+    .info-popup .t { white-space: normal; }
+  }
 </style>
 </head>
 <body>
@@ -113,7 +120,7 @@
   <div class="flow" id="flow"></div>
 </div>
 
-<div class="info">&#9432;<div class="info-popup"><div class="t">ACRONYM (Acronyms Creating Recursion Of Narratives Yielding Meaning)</div><div class="a">Gabriele de Seta, 2026</div><div>An endless generative poem composed by randomized acronyms of EU-funded research projects across framework programmes (FP1 1984 to Horizon Europe).</div></div></div>
+<div class="info">&#9432;<div class="info-popup"><div class="t">ACRONYM (Acronyms Creating Recursion Of Narratives Yielding Meaning)</div><div class="rest"><div class="a">Gabriele de Seta, 2026</div><div>An endless generative poem composed by randomized acronyms of EU-funded research projects across framework programmes (FP1 1984 to Horizon Europe).</div></div></div></div>
 
 <script>
 'use strict';
