@@ -98,14 +98,47 @@ function makeVerseEngine(A) {
       BY_SUF[n][s].push(a);
     }
   }
-  const acrEnding = (r, n, suffix) => pick(r, BY_SUF[n][suffix] || A);
+  // Pick a random element of pool that is not in `used`; null if pool exhausted.
+  function pickUnused(r, pool, used) {
+    if (!pool || !pool.length) return null;
+    for (let t = 0; t < 10; t++) {
+      const c = pool[(r() * pool.length) | 0];
+      if (!used.has(c)) return c;
+    }
+    for (const c of pool) if (!used.has(c)) return c;
+    return null;
+  }
 
-  // One line of 1..6 acronyms, optionally forced to end on a shared n-letter suffix.
-  function lineOfLen(r, n, rhyme) {
+  // Rhyme-forced ending: share the last n letters of the class suffix, but if
+  // every candidate is already used this generation, relax the constraint
+  // (3 -> 2 -> 1 shared letters), finally falling back to any unused acronym.
+  function acrEnding(r, rhyme, used) {
+    for (let n = rhyme.n; n >= 1; n--) {
+      const c = pickUnused(r, BY_SUF[n][rhyme.suffix.slice(-n)], used);
+      if (c) return c;
+    }
+    return pickUnused(r, A, used);
+  }
+
+  // One line of 1..6 acronyms, optionally forced to end on a shared n-letter
+  // suffix. Every acronym is recorded in `used` so it never repeats within one
+  // generation (one stanza() call).
+  function lineOfLen(r, n, rhyme, used) {
     const parts = [];
     const count = Math.max(1, n);
-    for (let i = 0; i < count; i++) parts.push(pick(r, A));
-    if (rhyme) parts[parts.length - 1] = acrEnding(r, rhyme.n, rhyme.suffix);
+    for (let i = 0; i < count; i++) {
+      const c = pickUnused(r, A, used) || pick(r, A);
+      parts.push(c);
+      used.add(c);
+    }
+    if (rhyme) {
+      const c = acrEnding(r, rhyme, used);
+      if (c) {
+        used.delete(parts[parts.length - 1]);
+        parts[parts.length - 1] = c;
+        used.add(c);
+      }
+    }
     return parts.join(" ");
   }
 
@@ -136,6 +169,7 @@ function makeVerseEngine(A) {
   // Returns an array of stanza strings (stanzas contain real newlines).
   function stanza() {
     const rr = Math.random;
+    const used = new Set();  // one generation = one stanza() call: no repeats
     m += dir * (0.012 + rr() * 0.02);
     if (m > 1) { m = 1; dir = -1; }
     if (m < 0) { m = 0; dir = 1; }
@@ -162,7 +196,7 @@ function makeVerseEngine(A) {
     if (fam === "sonnet") {
       const sch = "ABABCDCDEFEFGG";
       const q = [];
-      for (let i = 0; i < 14; i++) q.push(lineOfLen(rr, nTok(), end(sch, i)));
+      for (let i = 0; i < 14; i++) q.push(lineOfLen(rr, nTok(), end(sch, i), used));
       st.push(q.slice(0, 4).join("\n"));
       st.push(q.slice(4, 8).join("\n"));
       st.push(q.slice(8, 11).join("\n"));
@@ -172,14 +206,14 @@ function makeVerseEngine(A) {
       const n = 1 + Math.floor(rr() * 2);
       for (let s = 0; s < n; s++) {
         const q = [];
-        for (let i = 0; i < 4; i++) q.push(lineOfLen(rr, nTok(), end(scheme, i)));
+        for (let i = 0; i < 4; i++) q.push(lineOfLen(rr, nTok(), end(scheme, i), used));
         st.push(q.join("\n"));
       }
     } else if (fam === "couplets") {
       const n = 2 + Math.floor(rr() * 2);
       for (let i = 0; i < n; i++) {
         const L = end("AA", 0);
-        st.push(lineOfLen(rr, nTok(), L) + "\n" + lineOfLen(rr, nTok(), L));
+        st.push(lineOfLen(rr, nTok(), L, used) + "\n" + lineOfLen(rr, nTok(), L, used));
       }
     } else if (fam === "tercets") {
       const scheme = ["ABAB", "AABB", "ABBA", "ABCB", "AABA"][Math.floor(rr() * 5)];
@@ -187,7 +221,7 @@ function makeVerseEngine(A) {
       for (let s = 0; s < n; s++) {
         const q = [];
         for (let i = 0; i < 3; i++) {
-          q.push(lineOfLen(rr, nTok(), end(scheme.slice(0, 3), i)));
+          q.push(lineOfLen(rr, nTok(), end(scheme.slice(0, 3), i), used));
         }
         st.push(q.join("\n"));
       }
@@ -195,28 +229,28 @@ function makeVerseEngine(A) {
       const n = 2 + Math.floor(rr() * 3);
       for (let s = 0; s < n; s++) {
         st.push([
-          lineOfLen(rr, nTok(), null),
-          lineOfLen(rr, nTok(), null),
-          lineOfLen(rr, nTok(), null)
+          lineOfLen(rr, nTok(), null, used),
+          lineOfLen(rr, nTok(), null, used),
+          lineOfLen(rr, nTok(), null, used)
         ].join("\n"));
       }
     } else if (fam === "limerick") {
       const A1 = end("A", 0);
       const B1 = end("B", 0);
       st.push([
-        lineOfLen(rr, nTok(), A1),
-        lineOfLen(rr, nTok(), A1),
-        lineOfLen(rr, nTok(), B1),
-        lineOfLen(rr, nTok(), B1),
-        lineOfLen(rr, nTok(), A1)
+        lineOfLen(rr, nTok(), A1, used),
+        lineOfLen(rr, nTok(), A1, used),
+        lineOfLen(rr, nTok(), B1, used),
+        lineOfLen(rr, nTok(), B1, used),
+        lineOfLen(rr, nTok(), A1, used)
       ].join("\n"));
     } else if (fam === "refrain") {
-      const refrain = lineOfLen(rr, nTok());
+      const refrain = lineOfLen(rr, nTok(), null, used);
       const n = 2 + Math.floor(rr() * 2);
       for (let s = 0; s < n; s++) {
         const body = [];
         for (let i = 0; i < 2 + Math.floor(rr() * 2); i++) {
-          body.push(lineOfLen(rr, nTok(), null));
+          body.push(lineOfLen(rr, nTok(), null, used));
         }
         body.push(refrain);
         st.push(body.join("\n"));
@@ -224,13 +258,13 @@ function makeVerseEngine(A) {
     } else if (fam === "blazon") {
       const n = 5 + Math.floor(rr() * 5);
       const body = [];
-      for (let i = 0; i < n; i++) body.push(lineOfLen(rr, nTok(), null));
+      for (let i = 0; i < n; i++) body.push(lineOfLen(rr, nTok(), null, used));
       st.push(body.join("\n"));
     } else {  // freeverse
       const nL = 4 + Math.floor(rr() * 10);
       const lines = [];
       for (let i = 0; i < nL; i++) {
-        lines.push(lineOfLen(rr, nTok(), null));
+        lines.push(lineOfLen(rr, nTok(), null, used));
       }
       let cur = [];
       const blocks = [];
