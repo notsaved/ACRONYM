@@ -26,8 +26,6 @@
   /* Full-width responsive poem column. */
   .flow {
     position: absolute;
-    top: 0;
-    left: 0;
     width: 100%;
     box-sizing: border-box;
     padding: 0 4vw;
@@ -36,7 +34,6 @@
 
   .verse {
     white-space: pre-wrap;
-    text-align: left;
     font-size: clamp(26px, 4.5vw, 46px);
     line-height: 1.26;
     margin: 0 0 1em;
@@ -73,7 +70,6 @@
     z-index: 10;
     font-size: 20px;
     line-height: 1;
-    font-weight: 700;
     cursor: default;
     background: #fff;
     padding: 2px;
@@ -93,7 +89,6 @@
     font-size: 14px;
     font-weight: 400;
     line-height: 1.3;
-    text-align: left;
     background: #000;
     color: #fff;
     padding: 2px 8px;
@@ -148,47 +143,66 @@ function makeVerseEngine(A) {
       BY_SUF[n][s].push(a);
     }
   }
-  // Pick a random element of pool that is not in `used`; null if pool exhausted.
-  function pickUnused(r, pool, used) {
+  // Lines already emitted by any generation: no line ever repeats in the poem.
+  const usedLines = new Set();
+
+  // Pick a random element of pool that is in neither `used` (acronyms already
+  // committed this generation) nor `local` (acronyms in the line being built);
+  // null if pool exhausted.
+  function pickFree(r, pool, used, local) {
     if (!pool || !pool.length) return null;
     for (let t = 0; t < 10; t++) {
       const c = pool[(r() * pool.length) | 0];
-      if (!used.has(c)) return c;
+      if (!used.has(c) && !local.has(c)) return c;
     }
-    for (const c of pool) if (!used.has(c)) return c;
+    for (const c of pool) if (!used.has(c) && !local.has(c)) return c;
     return null;
   }
 
   // Rhyme-forced ending: share the last n letters of the class suffix, but if
-  // every candidate is already used this generation, relax the constraint
-  // (3 -> 2 -> 1 shared letters), finally falling back to any unused acronym.
-  function acrEnding(r, rhyme, used) {
+  // every candidate is already taken, relax the constraint (3 -> 2 -> 1 shared
+  // letters), finally falling back to any free acronym.
+  function acrEnding(r, rhyme, used, local) {
     for (let n = rhyme.n; n >= 1; n--) {
-      const c = pickUnused(r, BY_SUF[n][rhyme.suffix.slice(-n)], used);
+      const c = pickFree(r, BY_SUF[n][rhyme.suffix.slice(-n)], used, local);
       if (c) return c;
     }
-    return pickUnused(r, A, used);
+    return pickFree(r, A, used, local);
   }
 
   // One line of 1..6 acronyms, optionally forced to end on a shared n-letter
-  // suffix. Every acronym is recorded in `used` so it never repeats within one
-  // generation (one stanza() call).
+  // suffix. Tokens are committed to `used` only when the finished line is
+  // accepted, so no acronym repeats within one generation (one stanza() call),
+  // and the line goes into `usedLines` so it never recurs in later generations.
   function lineOfLen(r, n, rhyme, used) {
-    const parts = [];
-    const count = Math.max(1, n);
-    for (let i = 0; i < count; i++) {
-      const c = pickUnused(r, A, used) || pick(r, A);
-      parts.push(c);
-      used.add(c);
-    }
-    if (rhyme) {
-      const c = acrEnding(r, rhyme, used);
-      if (c) {
-        used.delete(parts[parts.length - 1]);
-        parts[parts.length - 1] = c;
-        used.add(c);
+    let count = Math.max(1, n);
+    let parts = [];
+    for (let attempt = 0; attempt < 50; attempt++) {
+      if (attempt === 25 && count < 6) count++;  // widen line if line-space is tight
+      const local = new Set();
+      parts = [];
+      for (let i = 0; i < count; i++) {
+        const c = pickFree(r, A, used, local) || pick(r, A);
+        parts.push(c);
+        local.add(c);
+      }
+      if (rhyme) {
+        const c = acrEnding(r, rhyme, used, local);
+        if (c) {
+          local.delete(parts[parts.length - 1]);
+          parts[parts.length - 1] = c;
+          local.add(c);
+        }
+      }
+      const line = parts.join(" ");
+      if (!usedLines.has(line)) {
+        for (const p of local) used.add(p);
+        usedLines.add(line);
+        return line;
       }
     }
+    for (const p of parts) used.add(p);
+    usedLines.add(parts.join(" "));
     return parts.join(" ");
   }
 
@@ -206,7 +220,7 @@ function makeVerseEngine(A) {
 
   // Morph continuum from classical to free verse.
   const FAM_ORDER = ["sonnet", "quatrain", "couplets", "tercets", "stanza3",
-                     "limerick", "refrain", "blazon", "freeverse"];
+                     "limerick", "blazon", "freeverse"];
   let m = Math.random();
   let dir = Math.random() < 0.5 ? 1 : -1;
 
@@ -239,14 +253,13 @@ function makeVerseEngine(A) {
       if (rhymeMap[ch] === undefined) rhymeMap[ch] = pick(rr, SUFS[k]);
       return { n: k, suffix: rhymeMap[ch] };
     }
-    const end = (sch, i) => rhymeEnd(sch, i);
 
     const st = [];
 
     if (fam === "sonnet") {
       const sch = "ABABCDCDEFEFGG";
       const q = [];
-      for (let i = 0; i < 14; i++) q.push(lineOfLen(rr, nTok(), end(sch, i), used));
+      for (let i = 0; i < 14; i++) q.push(lineOfLen(rr, nTok(), rhymeEnd(sch, i), used));
       st.push(q.slice(0, 4).join("\n"));
       st.push(q.slice(4, 8).join("\n"));
       st.push(q.slice(8, 11).join("\n"));
@@ -256,13 +269,13 @@ function makeVerseEngine(A) {
       const n = 1 + Math.floor(rr() * 2);
       for (let s = 0; s < n; s++) {
         const q = [];
-        for (let i = 0; i < 4; i++) q.push(lineOfLen(rr, nTok(), end(scheme, i), used));
+        for (let i = 0; i < 4; i++) q.push(lineOfLen(rr, nTok(), rhymeEnd(scheme, i), used));
         st.push(q.join("\n"));
       }
     } else if (fam === "couplets") {
       const n = 2 + Math.floor(rr() * 2);
       for (let i = 0; i < n; i++) {
-        const L = end("AA", 0);
+        const L = rhymeEnd("AA", 0);
         st.push(lineOfLen(rr, nTok(), L, used) + "\n" + lineOfLen(rr, nTok(), L, used));
       }
     } else if (fam === "tercets") {
@@ -271,7 +284,7 @@ function makeVerseEngine(A) {
       for (let s = 0; s < n; s++) {
         const q = [];
         for (let i = 0; i < 3; i++) {
-          q.push(lineOfLen(rr, nTok(), end(scheme.slice(0, 3), i), used));
+          q.push(lineOfLen(rr, nTok(), rhymeEnd(scheme.slice(0, 3), i), used));
         }
         st.push(q.join("\n"));
       }
@@ -285,8 +298,8 @@ function makeVerseEngine(A) {
         ].join("\n"));
       }
     } else if (fam === "limerick") {
-      const A1 = end("A", 0);
-      const B1 = end("B", 0);
+      const A1 = rhymeEnd("A", 0);
+      const B1 = rhymeEnd("B", 0);
       st.push([
         lineOfLen(rr, nTok(), A1, used),
         lineOfLen(rr, nTok(), A1, used),
@@ -294,17 +307,6 @@ function makeVerseEngine(A) {
         lineOfLen(rr, nTok(), B1, used),
         lineOfLen(rr, nTok(), A1, used)
       ].join("\n"));
-    } else if (fam === "refrain") {
-      const refrain = lineOfLen(rr, nTok(), null, used);
-      const n = 2 + Math.floor(rr() * 2);
-      for (let s = 0; s < n; s++) {
-        const body = [];
-        for (let i = 0; i < 2 + Math.floor(rr() * 2); i++) {
-          body.push(lineOfLen(rr, nTok(), null, used));
-        }
-        body.push(refrain);
-        st.push(body.join("\n"));
-      }
     } else if (fam === "blazon") {
       const n = 5 + Math.floor(rr() * 5);
       const body = [];
@@ -342,9 +344,9 @@ async function loadAll() {
   const text = await (await fetch("acronyms.tsv")).text();
   const A = [];
   const T = {};
-  for (const line of text.split("\n")) {
-    if (!line) continue;
+  for (const line of text.split(/\r?\n/)) {
     const i = line.indexOf("\t");
+    if (i < 1) continue;
     const acr = line.slice(0, i);
     A.push(acr);
     T[acr] = line.slice(i + 1);
@@ -433,11 +435,13 @@ function startStage(A, T) {
       flow.removeChild(flow.children[0]);
     }
 
-    // Snap the translation to whole CSS pixels. With a fractional translateY,
-    // Firefox re-snaps glyph rasterization every frame, so text (and the hover
-    // tooltips inside the transformed layer) shimmer by a pixel while scrolling.
-    // Only write the style when the integer offset actually changes.
-    const y = -Math.round(px);
+    // Snap the translation to whole DEVICE pixels (px * dpr), not just whole
+    // CSS pixels: at a fractional devicePixelRatio (1.25/1.5 on Windows),
+    // integer CSS offsets still map to fractional device offsets that the
+    // compositor re-snaps irregularly, making the layer jitter in Firefox.
+    // Only write the style when the offset actually changes.
+    const dpr = window.devicePixelRatio || 1;
+    const y = -Math.round(px * dpr) / dpr;
     if (y !== lastY) {
       flow.style.transform = "translateY(" + y + "px)";
       lastY = y;
